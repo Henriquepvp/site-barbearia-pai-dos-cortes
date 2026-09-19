@@ -1,17 +1,25 @@
 (() => {
   "use strict";
 
+  // Número do WhatsApp da barbearia (formato internacional, sem + ou espaços).
   const whatsappNumber = "5561981055589";
+
   const body = document.body;
   const menuToggle = document.querySelector(".menu-toggle");
   const mainMenu = document.querySelector(".main-nav");
   const bookingForm = document.querySelector("#booking-form");
   const dateInput = document.querySelector("#date");
+  const timeSelect = document.querySelector("#time");
   const feedback = document.querySelector("#form-feedback");
   const lightbox = document.querySelector("#lightbox");
   const lightboxImage = document.querySelector("#lightbox-image");
   const lightboxTitle = document.querySelector("#lightbox-title");
 
+  /* ------------------------------------------------------------------
+   * Datas e horários
+   * ------------------------------------------------------------------ */
+
+  // Data de hoje no formato AAAA-MM-DD, usando o horário local do visitante.
   const getTodayISO = () => {
     const today = new Date();
     const year = today.getFullYear();
@@ -19,6 +27,37 @@
     const day = String(today.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
+
+  // Converte textos como "09:00", "9:30" ou "9h" em minutos desde 00:00.
+  // Retorna null quando o texto não é um horário (ex.: opção "Selecione").
+  const parseTimeToMinutes = (value) => {
+    const match = String(value || "").match(/(\d{1,2})\s*(?::|h)\s*(\d{2})?/i);
+    if (!match) return null;
+    return Number(match[1]) * 60 + Number(match[2] || 0);
+  };
+
+  const getNowMinutes = () => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  };
+
+  const isPastDate = (dateValue) => {
+    if (!dateValue) return true;
+    const selectedDate = new Date(`${dateValue}T12:00:00`);
+    const today = new Date(`${getTodayISO()}T12:00:00`);
+    return selectedDate < today;
+  };
+
+  // Verdadeiro quando a data é hoje e o horário escolhido já passou.
+  const isPastTimeToday = (dateValue, timeValue) => {
+    if (dateValue !== getTodayISO()) return false;
+    const minutes = parseTimeToMinutes(timeValue);
+    return minutes !== null && minutes <= getNowMinutes();
+  };
+
+  /* ------------------------------------------------------------------
+   * Menu mobile
+   * ------------------------------------------------------------------ */
 
   const closeMenu = () => {
     if (!menuToggle || !mainMenu) return;
@@ -32,13 +71,22 @@
     menuToggle.addEventListener("click", () => {
       const isOpen = menuToggle.getAttribute("aria-expanded") === "true";
       menuToggle.setAttribute("aria-expanded", String(!isOpen));
-      menuToggle.setAttribute("aria-label", isOpen ? "Abrir menu" : "Fechar menu");
+      menuToggle.setAttribute(
+        "aria-label",
+        isOpen ? "Abrir menu" : "Fechar menu",
+      );
       mainMenu.classList.toggle("is-open", !isOpen);
       body.classList.toggle("menu-open", !isOpen);
     });
 
-    mainMenu.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeMenu));
+    mainMenu
+      .querySelectorAll("a")
+      .forEach((link) => link.addEventListener("click", closeMenu));
   }
+
+  /* ------------------------------------------------------------------
+   * Formulário de agendamento
+   * ------------------------------------------------------------------ */
 
   if (dateInput) {
     dateInput.min = getTodayISO();
@@ -50,12 +98,38 @@
     feedback.classList.toggle("error", type === "error");
   };
 
-  const isPastDate = (dateValue) => {
-    if (!dateValue) return true;
-    const selectedDate = new Date(`${dateValue}T12:00:00`);
-    const today = new Date(`${getTodayISO()}T12:00:00`);
-    return selectedDate < today;
+  // Desabilita os horários que já passaram quando a data escolhida é hoje.
+  const updateTimeOptions = () => {
+    if (!timeSelect || !dateInput) return;
+
+    const isToday = dateInput.value === getTodayISO();
+    const nowMinutes = getNowMinutes();
+    let availableCount = 0;
+
+    Array.from(timeSelect.options).forEach((option) => {
+      const minutes = parseTimeToMinutes(option.value);
+      if (minutes === null) return; // ignora a opção "Selecione"
+      option.disabled = isToday && minutes <= nowMinutes;
+      if (!option.disabled) availableCount += 1;
+    });
+
+    // Se o horário que estava selecionado ficou indisponível, limpa a escolha.
+    if (timeSelect.selectedOptions[0]?.disabled) {
+      timeSelect.value = "";
+    }
+
+    if (isToday && availableCount === 0) {
+      showFeedback(
+        "Não há mais horários disponíveis hoje. Escolha outro dia.",
+        "error",
+      );
+    } else {
+      showFeedback("");
+    }
   };
+
+  dateInput?.addEventListener("change", updateTimeOptions);
+  updateTimeOptions();
 
   if (bookingForm) {
     bookingForm.addEventListener("submit", (event) => {
@@ -64,7 +138,10 @@
 
       if (!bookingForm.checkValidity()) {
         bookingForm.reportValidity();
-        showFeedback("Confira os campos obrigatórios antes de continuar.", "error");
+        showFeedback(
+          "Confira os campos obrigatórios antes de continuar.",
+          "error",
+        );
         return;
       }
 
@@ -73,12 +150,27 @@
       const serviceValue = String(formData.get("service") || "");
       const dateValue = String(formData.get("date") || "");
       const time = String(formData.get("time") || "");
-      const serviceOption = document.querySelector(`#service option[value="${CSS.escape(serviceValue)}"]`);
-      const serviceLabel = serviceOption ? serviceOption.textContent.split(" —")[0] : serviceValue;
+      const serviceOption = document.querySelector(
+        `#service option[value="${CSS.escape(serviceValue)}"]`,
+      );
+      const serviceLabel = serviceOption
+        ? serviceOption.textContent.split(" —")[0]
+        : serviceValue;
 
       if (isPastDate(dateValue)) {
         showFeedback("Escolha uma data de hoje ou futura.", "error");
         dateInput?.focus();
+        return;
+      }
+
+      // Segunda barreira: mesmo que a opção seja reabilitada pelo navegador,
+      // o envio é bloqueado se o horário de hoje já passou.
+      if (isPastTimeToday(dateValue, time)) {
+        showFeedback(
+          "Esse horário já passou. Escolha um horário mais tarde ou outro dia.",
+          "error",
+        );
+        timeSelect?.focus();
         return;
       }
 
@@ -96,6 +188,10 @@
     });
   }
 
+  /* ------------------------------------------------------------------
+   * Galeria e lightbox
+   * ------------------------------------------------------------------ */
+
   const openLightbox = (image, label) => {
     if (!lightbox || !lightboxImage || !lightboxTitle) return;
     lightboxImage.src = image.src;
@@ -111,20 +207,26 @@
     if (!lightbox || !lightboxImage) return;
     lightbox.classList.remove("is-open");
     lightbox.setAttribute("aria-hidden", "true");
-    lightboxImage.src = "";
+    // removeAttribute evita uma requisição desnecessária que um src vazio pode causar.
+    lightboxImage.removeAttribute("src");
     body.classList.remove("lightbox-open");
   };
 
   document.querySelectorAll(".gallery-item").forEach((item) => {
     const image = item.querySelector("img");
-    const label = item.querySelector(".gallery-label")?.textContent || "Foto do corte";
+    const label =
+      item.querySelector(".gallery-label")?.textContent || "Foto do corte";
     if (!image) return;
 
     image.addEventListener("load", () => item.classList.add("has-image"));
     image.addEventListener("error", () => item.classList.add("is-placeholder"));
 
-    if (image.complete && image.naturalWidth > 0) {
-      item.classList.add("has-image");
+    // Cobre o caso em que a imagem já terminou de carregar (ou falhar)
+    // antes de os listeners acima serem registrados.
+    if (image.complete) {
+      item.classList.add(
+        image.naturalWidth > 0 ? "has-image" : "is-placeholder",
+      );
     }
 
     item.addEventListener("click", () => {
