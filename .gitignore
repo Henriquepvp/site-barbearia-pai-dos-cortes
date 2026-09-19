@@ -1,0 +1,23 @@
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Dependências e builds
+node_modules/
+dist/
+.cache/
+
+# Arquivos temporários
+*.tmp
+*.log
+.env
+.env.*
+!.env.example
+
+# Uploads locais temporários
+uploads/
